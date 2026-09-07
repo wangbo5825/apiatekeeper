@@ -1,0 +1,30 @@
+services:
+  apigate:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    ports:
+      - "${APIGATE_PORT:-8080}:8080"
+    environment:
+      APIGATE_UPSTREAM: "upstream:9000"
+      APIGATE_PROCESSOR_SECRET: "${APIGATE_PROCESSOR_SECRET:-change-me}"
+      APIGATE_ADMIN_TOKENS: "${APIGATE_ADMIN_TOKENS:-admin}"
+      APIGATE_JWT_SECRET: "${APIGATE_JWT_SECRET:-change-me}"
+      APIGATE_DB_PATH: "/app/data/apigate.sqlite"
+    volumes:
+      - apigate-data:/app/data
+    depends_on:
+      - upstream
+
+  # 开发用 mock 上游
+  upstream:
+    image: python:3-alpine
+    working_dir: /srv
+    volumes:
+      - ../test/upstream.py:/srv/upstream.py:ro
+    command: ["python", "/srv/upstream.py"]
+    expose:
+      - "9000"
+
+volumes:
+  apigate-data:

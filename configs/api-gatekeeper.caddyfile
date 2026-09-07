@@ -1,0 +1,108 @@
+# ============================================================
+# ApiGateKeeper 独立 Caddyfile 片段（可 import，避免污染宿主 Caddyfile）
+#
+# 用法 1（FRAMPP 0.6.0）：安装脚本把本文件渲染后放到
+#   $FRAMPP_HOME/etc/caddy.d/api-gatekeeper.caddy
+# 并在宿主 Caddyfile 中 import（或由 FRAMPP 的 caddy.d 自动导入）。
+#
+# 用法 2（任意 Caddyfile）：
+#   import /path/to/api-gatekeeper.caddyfile
+# 注意：渲染后的文件使用绝对路径，不依赖宿主 Caddyfile 的工作目录。
+#
+# 渲染占位符（由 install-frampp.sh 替换，也可手工 sed）：
+#   {{PORT}}             Gatekeeper 监听端口（默认 8090）
+#   {{PROCESSOR_SECRET}} 处理器端点共享密钥
+#   {{UPSTREAM}}         兜底上游地址
+#   {{PHP_ROOT}}         Gatekeeper 安装目录（php root，绝对路径）
+#   {{WORKER_PHP}}        processor/worker.php 的绝对路径
+#   {{ADMIN_DIST}}        admin-web/dist 的绝对路径
+#   {{LOOPBACK_BASE}}     本机回环地址（http://127.0.0.1:{{PORT}}）
+# ============================================================
+
+:{{PORT}} {
+	root * .
+
+	# 1) 处理器端点：PHP worker，绝不再套 access/filter（防递归）；
+	#    仅允许本机回环 + 共享密钥。
+	handle /__proc/request {
+		@external not remote_ip 127.0.0.0/8 ::1
+		respond @external 403
+		# 注意：设置“请求头”必须用 request_header 指令（header 只处理响应头）
+		request_header X-Processor-Secret "{{PROCESSOR_SECRET}}"
+		php {
+			root {{PHP_ROOT}}
+			worker {
+				file {{WORKER_PHP}}
+				match /__proc/request
+			}
+		}
+	}
+
+	# 2) 管理端 API：PHP worker（无钩子，应用层令牌鉴权）
+	@adminApi {
+		path /admin/api /admin/api/*
+	}
+	handle @adminApi {
+		php {
+			root {{PHP_ROOT}}
+			worker {
+				file {{WORKER_PHP}}
+				match /admin/api/*
+			}
+		}
+	}
+
+	# 3) 管理端 SPA 静态资源
+	#    SPA 按 base=/admin/ 构建，资源请求形如 /admin/assets/...；
+	#    因此 /admin 先重定向到 /admin/，/admin/* 用 handle_path 剥离前缀后
+	#    再以 dist 为根提供文件（try_files 兜底 SPA 路由回 index.html）。
+	handle /admin {
+		# 注意：Caddy 的 redir 语法是 [<matcher>] <to> [<code>]，
+		# 直接写 redir /admin/ 308 会被解析成 from=/admin/ to=308（302）。
+		# 用 * 匹配器 + 显式目标，才能表达"重定向到 /admin/，状态 308"。
+		redir * /admin/ 308
+	}
+	handle_path /admin/* {
+		# try_files 的文件匹配器与 file_server 都读 {http.vars.root}，
+		# 必须在此作用域内设置 root，否则回退路径按站点根目录解析会 404。
+		root * {{ADMIN_DIST}}
+		try_files {path} /index.html
+		file_server {
+			index index.html
+		}
+	}
+
+	# 4) 默认网关路由：access → filter → reverse_proxy
+	handle {
+		route {
+			access {
+				upstream {{LOOPBACK_BASE}}
+				path /__proc/request
+				timeout 1s
+				on_error passthrough
+			}
+			filter {
+				mode buffer
+				upstream {{LOOPBACK_BASE}}
+				path /__proc/request
+				timeout 1s
+				on_error passthrough
+			}
+			# 动态上游：access 输出 X-Processor-Backend（目标地址），map 消费；
+			# 无提示时回落到缺省上游。
+			# 注意：map 目标不能用 {vars.*}/{http.vars.*}——Caddy 的
+			# {http.vars.*} replacer 对未设置变量也总是返回空值，会挡住 map 的
+			# 懒回调导致上游恒为空（dial tcp :0）。用自定义占位符 {gk_upstream}。
+			map {http.request.header.X-Processor-Backend} {gk_upstream} {
+				# 必须加非空正则透传：map 只会按映射项输出，没有映射时恒返回
+				# default（导致应用上游配置不生效、永远走兜底）。
+				# ~.+ 匹配任意非空值，$0 = 整个匹配（原样透传）。
+				~.+ $0
+				default {{UPSTREAM}}
+			}
+			# Caddy 动态上游限制：占位符地址不能带 scheme，值必须是 host:port
+			# （install-frampp.sh 渲染 {{UPSTREAM}} 时已去掉 scheme）
+			reverse_proxy {gk_upstream}
+		}
+	}
+}

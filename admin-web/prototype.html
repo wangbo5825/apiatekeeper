@@ -1,0 +1,1014 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>API Gatekeeper 管理端原型</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { font-family: system-ui, "Microsoft YaHei", sans-serif; background: #f5f6f8; color: #222; }
+  .layout { display: flex; min-height: 100vh; }
+  .sidebar { width: 230px; background: #1f2937; color: #fff; padding: 20px 14px; display: flex; flex-direction: column; gap: 14px; flex-shrink: 0; }
+  .sidebar h1 { font-size: 18px; padding: 0 8px; line-height: 1.4; }
+  .sidebar .ver { font-size: 12px; color: #9ca3af; padding: 0 8px; }
+  .sidebar nav { display: flex; flex-direction: column; gap: 4px; }
+  .sidebar a { color: #cbd5e1; text-decoration: none; padding: 9px 10px; border-radius: 6px; font-size: 14px; cursor: pointer; display: block; }
+  .sidebar a:hover { background: #2d3748; }
+  .sidebar a.active { background: #374151; color: #fff; }
+  .sidebar .foot { margin-top: auto; font-size: 12px; color: #6b7280; padding: 0 8px; }
+  .content { flex: 1; padding: 22px 26px; min-width: 0; }
+  .banner { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; border-radius: 8px; padding: 10px 14px; font-size: 13px; margin-bottom: 16px; line-height: 1.7; }
+  .card { background: #fff; border-radius: 8px; padding: 16px 18px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .card h2 { margin-bottom: 12px; font-size: 16px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .card h3 { font-size: 14px; margin-bottom: 10px; color: #374151; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #edf0f3; vertical-align: middle; }
+  th { color: #6b7280; font-weight: 600; white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+  .badge { display: inline-block; padding: 2px 9px; border-radius: 10px; font-size: 12px; background: #e5e7eb; color: #374151; }
+  .tag-new { background: #dbeafe; color: #1e40af; }
+  .tag-open { background: #fef3c7; color: #92400e; }
+  .tag-ok { background: #dcfce7; color: #166534; }
+  .tag-warn { background: #ffedd5; color: #9a3412; }
+  .tag-down { background: #fee2e2; color: #991b1b; }
+  .tag-info { background: #e0e7ff; color: #3730a3; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .stat { background: #fff; border-radius: 8px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .stat .lb { color: #6b7280; font-size: 12px; }
+  .stat b { font-size: 22px; display: block; margin-top: 4px; }
+  .stat .sub { font-size: 12px; color: #9ca3af; margin-top: 2px; }
+  button { padding: 7px 14px; border-radius: 6px; border: 1px solid #d1d5db; background: #fff; cursor: pointer; font-size: 13px; }
+  button.primary { background: #2563eb; color: #fff; border-color: #2563eb; }
+  button.danger { background: #fff; color: #dc2626; border-color: #fecaca; }
+  button.sm { padding: 3px 10px; font-size: 12px; }
+  input, select, textarea { padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; }
+  input[type=checkbox] { accent-color: #2563eb; }
+  .form-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+  .form-row label { font-size: 13px; color: #374151; display: flex; align-items: center; gap: 5px; }
+  .field-label { font-size: 12px; color: #6b7280; margin: 8px 0 4px; }
+  .hint { font-size: 12px; color: #9ca3af; margin-top: 6px; line-height: 1.7; }
+  code { background: #f3f4f6; padding: 1px 5px; border-radius: 4px; font-size: 12px; color: #111827; }
+  .mono { font-family: Consolas, monospace; font-size: 12px; }
+  .page { display: none; }
+  .page.active { display: block; }
+  .app-sub { display: none; }
+  .app-sub.active { display: block; }
+  .legend { display: flex; gap: 14px; font-size: 12px; color: #6b7280; margin-bottom: 14px; flex-wrap: wrap; }
+  .legend span { display: flex; align-items: center; gap: 5px; }
+  .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .app-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; background: #fff; border-radius: 8px; padding: 14px 18px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .app-head h2 { font-size: 17px; }
+  .app-head .meta { color: #6b7280; font-size: 13px; }
+  .alert-line { border-left: 3px solid #f59e0b; background: #fffbeb; padding: 8px 12px; border-radius: 4px; font-size: 13px; color: #92400e; margin-bottom: 12px; }
+  .alert-err { border-left: 3px solid #ef4444; background: #fef2f2; padding: 8px 12px; border-radius: 4px; font-size: 13px; color: #991b1b; margin-bottom: 12px; }
+  .alert-ok { border-left: 3px solid #22c55e; background: #f0fdf4; padding: 8px 12px; border-radius: 4px; font-size: 13px; color: #166534; margin-bottom: 12px; }
+  .switch-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px dashed #e5e7eb; }
+  .switch-row:last-child { border-bottom: none; }
+  .switch-row b { font-size: 13px; display: block; }
+  .switch-row .d { font-size: 12px; color: #6b7280; }
+  .switch-row input { width: 36px; height: 20px; margin-left: auto; }
+  .nav-group { font-size: 11px; color: #6b7280; padding: 10px 10px 2px; letter-spacing: .05em; }
+  .app-picker { padding: 2px 4px; }
+  .app-picker select { width: 100%; padding: 7px 8px; border-radius: 6px; border: none; font-size: 13px; background: #374151; color: #fff; }
+  .modal-mask { position: fixed; inset: 0; background: rgba(15,23,42,.45); display: none; align-items: center; justify-content: center; z-index: 50; }
+  .modal { background: #fff; border-radius: 10px; padding: 22px; width: 560px; max-width: 92vw; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+  .modal h2 { font-size: 16px; margin-bottom: 14px; }
+  @media (max-width: 900px) { .detail-grid { grid-template-columns: 1fr; } .sidebar { width: 190px; } }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div>
+      <h1>API Gatekeeper</h1>
+      <div class="ver">管理端原型 v0.4 · 零配置可用</div>
+    </div>
+    <nav>
+      <a data-page="dashboard" class="active">仪表盘</a>
+      <div class="nav-group">应用</div>
+      <div class="app-picker">
+        <select id="appSelect" onchange="onAppSelect(this)">
+          <option value="">请选择应用</option>
+          <option value="orders">订单服务 /v1</option>
+          <option value="pay">支付服务 /pay</option>
+          <option value="report">报表服务 /report</option>
+          <option value="new">＋ 新建应用…</option>
+        </select>
+      </div>
+      <a data-page="app-detail" data-sub="overview">概览</a>
+      <a data-page="app-detail" data-sub="apis">API 列表</a>
+      <a data-page="app-detail" data-sub="clients">客户端</a>
+      <div class="nav-group">治理</div>
+      <a data-page="app-detail" data-sub="rules">规则</a>
+      <a data-page="app-detail" data-sub="variables">变量</a>
+      <div class="nav-group">配置</div>
+      <a data-page="app-detail" data-sub="settings">应用设置</a>
+      <a data-page="app-detail" data-sub="upstreams">上游</a>
+      <div class="nav-group">安全</div>
+      <a data-page="app-detail" data-sub="blacklist">黑名单</a>
+      <a data-page="app-detail" data-sub="tokens">令牌</a>
+      <div class="nav-group">系统</div>
+      <a data-page="metrics">监控 <span class="badge tag-new">新增</span></a>
+      <a data-page="system">系统 <span class="badge tag-new">新增</span></a>
+    </nav>
+    <div class="foot">原型数据为演示数据，非真实统计</div>
+  </aside>
+
+  <main class="content">
+    <div class="banner">
+      <b>API Gatekeeper 模型：</b>请求先命中应用（未命中 → 404）。每个应用有统一缺省配置：
+      <b>缺省放行 / 缺省缓存与 TTL / 自动加入规则</b>。正常缺省 = 放行 + 自动加入：
+      新接口自动访问指定上游，并按 URL 模式自动加入 API 列表——<b>零配置即可使用</b>，
+      直接获得全部可用 API 列表。关闭自动加入后，新 API 不再入列。
+    </div>
+    <div class="legend">
+      <span><span class="badge tag-new">新增</span> 本次设计新增</span>
+      <span><span class="badge tag-open">待确认</span> 需要细化 / 确认的点</span>
+      <span><span class="badge tag-info">设计点</span> 需求规则说明</span>
+    </div>
+
+    <!-- ============ 仪表盘（全局） ============ -->
+    <section id="page-dashboard" class="page active">
+      <div class="card">
+        <h2>全局概览</h2>
+        <div class="grid">
+          <div class="stat"><div class="lb">应用数</div><b>3</b></div>
+          <div class="stat"><div class="lb">API 总数</div><b>24</b></div>
+          <div class="stat"><div class="lb">客户端</div><b>17</b></div>
+          <div class="stat"><div class="lb">今日请求</div><b>128,430</b></div>
+          <div class="stat"><div class="lb">错误 4xx/5xx</div><b>1,203</b><div class="sub">0.94%</div></div>
+          <div class="stat"><div class="lb">拦截（403/429）</div><b>846</b></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>应用一览</h2>
+        <table>
+          <thead><tr><th>应用</th><th>base_path</th><th>缺省放行</th><th>自动加入</th><th>上游健康</th><th>今日请求</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr><td>订单服务</td><td class="mono">/v1</td><td><span class="badge tag-ok">放行</span></td><td><span class="badge tag-info">开</span></td><td><span class="badge tag-ok">3/3 健康</span></td><td>42,180</td><td><button class="sm primary" onclick="goAppDetail()">进入详情</button></td></tr>
+            <tr><td>支付服务</td><td class="mono">/pay</td><td><span class="badge tag-ok">放行</span></td><td><span class="badge tag-warn">关</span></td><td><span class="badge tag-warn">主已切换</span></td><td>31,402</td><td><button class="sm primary" onclick="goAppDetail()">进入详情</button></td></tr>
+            <tr><td>报表服务</td><td class="mono">/report</td><td><span class="badge tag-down">拒绝</span></td><td><span class="badge tag-info">开</span></td><td><span class="badge tag-down">全部故障</span></td><td>0</td><td><button class="sm primary" onclick="goAppDetail()">进入详情</button></td></tr>
+          </tbody>
+        </table>
+        <div class="hint">未命中任何应用 → 404。各应用缺省配置独立。</div>
+      </div>
+
+      <div class="card">
+        <h2>请求趋势（全局，按小时桶）</h2>
+        <div class="form-row" style="justify-content:flex-end"><button class="primary sm">运行聚合</button></div>
+        <table>
+          <thead><tr><th>时间</th><th>请求数</th><th>错误</th><th>拦截</th><th>P95 延迟</th></tr></thead>
+          <tbody>
+            <tr><td>2026-08-29 14:00</td><td>5,421</td><td>41</td><td>29</td><td>86ms</td></tr>
+            <tr><td>2026-08-29 13:00</td><td>5,982</td><td>52</td><td>33</td><td>92ms</td></tr>
+            <tr><td>2026-08-29 12:00</td><td>4,310</td><td>36</td><td>18</td><td>74ms</td></tr>
+            <tr><td>2026-08-29 11:00</td><td>6,102</td><td>47</td><td>40</td><td>88ms</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ============ 应用管理 ============ -->
+    <section id="page-apps" class="page">
+      <div class="card">
+        <h2>应用列表</h2>
+        <table>
+          <thead><tr><th>名称</th><th>base_path</th><th>匹配方式</th><th>缺省配置</th><th>状态</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr><td>订单服务</td><td class="mono">/v1</td><td>仅前缀</td><td>放行 · 自动加入开</td><td><span class="badge tag-ok">启用</span></td><td><button class="sm primary" onclick="goAppDetail()">进入详情</button> <button class="sm">编辑</button> <button class="sm danger">删除</button></td></tr>
+            <tr><td>支付服务</td><td class="mono">/pay</td><td>前缀 + Host</td><td>放行 · 自动加入关</td><td><span class="badge tag-ok">启用</span></td><td><button class="sm primary" onclick="goAppDetail()">进入详情</button> <button class="sm">编辑</button> <button class="sm danger">删除</button></td></tr>
+            <tr><td>报表服务</td><td class="mono">/report</td><td>仅前缀</td><td>拒绝 · 自动加入开</td><td><span class="badge tag-down">停用</span></td><td><button class="sm primary" onclick="goAppDetail()">进入详情</button> <button class="sm">编辑</button> <button class="sm danger">删除</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>新建应用</h2>
+        <div class="form-row">
+          <input placeholder="应用名称，如 订单服务" style="width:200px">
+          <label>base_path <input placeholder="/v1" style="width:90px"></label>
+          <label>匹配方式
+            <select>
+              <option>仅前缀（推荐）</option>
+              <option>前缀 + Host</option>
+              <option>前缀 + 自定义请求头</option>
+            </select>
+          </label>
+          <input placeholder="Host / 请求头值（可选）" style="width:200px">
+        </div>
+        <div class="form-row">
+          <button class="primary" onclick="openAppModal()">新建应用</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 应用详情 ============ -->
+    <section id="page-app-detail" class="page">
+      <div class="app-head">
+        <h2 id="appTitle">订单服务</h2>
+        <span class="mono meta">base_path /v1</span>
+        <span class="badge tag-ok">缺省放行</span>
+        <span class="badge tag-info">自动加入规则：开</span>
+        <span class="badge tag-ok">启用</span>
+        <button class="sm" onclick="showSub('settings')">应用设置</button>
+      </div>
+
+      <!-- 概览 -->
+      <div id="app-overview" class="app-sub active">
+        <div class="card">
+          <div class="grid">
+            <div class="stat"><div class="lb">API 数（自动登记）</div><b>8</b></div>
+            <div class="stat"><div class="lb">客户端</div><b>6</b></div>
+            <div class="stat"><div class="lb">今日请求</div><b>42,180</b></div>
+            <div class="stat"><div class="lb">拦截（403/429）</div><b>302</b></div>
+          </div>
+        </div>
+        <div class="card">
+          <h2>应用请求趋势</h2>
+          <table>
+            <thead><tr><th>时间</th><th>请求数</th><th>错误</th><th>拦截</th><th>P95 延迟</th></tr></thead>
+            <tbody>
+              <tr><td>2026-08-29 14:00</td><td>2,120</td><td>18</td><td>22</td><td>64ms</td></tr>
+              <tr><td>2026-08-29 13:00</td><td>2,450</td><td>25</td><td>15</td><td>70ms</td></tr>
+              <tr><td>2026-08-29 12:00</td><td>1,860</td><td>12</td><td>9</td><td>58ms</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 设置：应用缺省配置 -->
+      <div id="app-settings" class="app-sub">
+        <div class="card">
+          <h2>应用缺省配置 <span class="badge tag-new">新增</span></h2>
+          <div class="switch-row">
+            <div><b>缺省放行</b><div class="d">未配置规则的请求是否放行到应用上游</div></div>
+            <input type="checkbox" checked>
+          </div>
+          <div class="switch-row">
+            <div><b>缺省缓存返回数据</b><div class="d">未配置缓存规则时是否缓存响应</div></div>
+            <input type="checkbox">
+          </div>
+          <div class="form-row" style="margin-top:10px">
+            <label>缺省缓存 TTL（秒）<input type="number" value="60" style="width:90px"></label>
+            <label>缺省上游组
+              <select>
+                <option>订单上游组（轮询）</option>
+                <option>订单备用组（主备）</option>
+              </select>
+            </label>
+          </div>
+          <div class="switch-row">
+            <div><b>自动加入规则</b><div class="d">新 URL 按模式自动加入 API 列表（关闭后不再入列）</div></div>
+            <input type="checkbox" checked>
+          </div>
+          <div class="form-row" style="margin-top:12px"><button class="primary">保存应用设置</button></div>
+        </div>
+        <div class="card">
+          <h3>缺省配置 × 自动加入 组合效果</h3>
+          <table>
+            <thead><tr><th>缺省放行</th><th>自动加入</th><th>效果</th></tr></thead>
+            <tbody>
+              <tr><td>放行</td><td>开</td><td>新 URL 自动放行并加入列表（零配置可用）</td></tr>
+              <tr><td>放行</td><td>关</td><td>新 URL 放行但不加入列表</td></tr>
+              <tr><td>拒绝</td><td>开</td><td>新 URL 拒绝；加入列表后放行</td></tr>
+              <tr><td>拒绝</td><td>关</td><td>严格白名单，仅列表内 API 可用</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- API 列表 -->
+      <div id="app-apis" class="app-sub">
+        <div class="card">
+          <h2>API 列表（应用内相对路径）</h2>
+          <div class="alert-line" style="margin-top:0">
+            自动加入规则<b>已开启</b>：新 URL 自动访问上游并按模式登记到本列表。
+            关闭后，新的 API 不再加入列表。
+          </div>
+          <div class="form-row">
+            <input placeholder="搜索路径" style="width:220px">
+            <button class="primary sm">手动添加 API</button>
+            <span class="badge tag-info">已登记 8 个，其中自动登记 7 个</span>
+          </div>
+          <table>
+            <thead><tr><th>方法</th><th>相对路径模板</th><th>名称</th><th>规则数</th><th>请求数</th><th>操作</th></tr></thead>
+            <tbody>
+              <tr><td><span class="badge">GET</span></td><td>/orders/{id}</td><td>订单详情</td><td>2（cache + stats）</td><td>9,204</td><td><button class="sm">编辑</button> <button class="sm danger">删除</button></td></tr>
+              <tr><td><span class="badge">POST</span></td><td>/orders</td><td>创建订单</td><td>2（rate_limit + save_variable）</td><td>6,511</td><td><button class="sm">编辑</button> <button class="sm danger">删除</button></td></tr>
+              <tr><td><span class="badge">GET</span></td><td>/tickets/{code}</td><td>换票码校验</td><td>2（variable_check + auth）</td><td>1,873</td><td><button class="sm">编辑</button> <button class="sm danger">删除</button></td></tr>
+              <tr><td><span class="badge">GET</span></td><td>/admin/*</td><td>应用管理接口</td><td>1（auth）</td><td>420</td><td><button class="sm">编辑</button> <button class="sm danger">删除</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <h2>编辑 API（含冲突检测）</h2>
+          <div class="form-row">
+            <label>方法
+              <select id="editApiMethod">
+                <option>GET</option>
+                <option>POST</option>
+                <option>PUT</option>
+                <option>DELETE</option>
+              </select>
+            </label>
+            <label>相对路径模板 <input id="editApiPath" value="/orders/{id}" style="width:160px"></label>
+            <input id="editApiName" value="订单详情" placeholder="名称" style="width:140px">
+            <label>路径转写
+              <select>
+                <option>使用上游组缺省映射</option>
+                <option>自定义（change_target 规则）</option>
+              </select>
+            </label>
+            <button class="primary sm" onclick="saveApiEdit()">保存</button>
+          </div>
+          <div id="apiSaveMsg"></div>
+          <div class="hint">
+            <span class="badge tag-info">设计点</span>
+            保存时检测与其他 URL 的冲突：完全重复、模板互相覆盖
+            （如 <code>/orders/{id}</code> 与 <code>/orders</code> 或 <code>/orders/123</code>、通配重叠）。
+            可先删除冲突的 API 再保存。试试把路径改成 <code>/orders</code> 查看冲突提示。
+          </div>
+        </div>
+      </div>
+
+      <!-- 客户端 -->
+      <div id="app-clients" class="app-sub">
+        <div class="card">
+          <h2>客户端（应用内）</h2>
+          <table>
+            <thead><tr><th>客户端</th><th>类型</th><th>请求数</th><th>错误</th><th>拦截</th><th>限流命中</th><th>黑名单</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">user:u_10086</td><td>JWT sub</td><td>15,180</td><td>120</td><td>40</td><td>8</td><td><span class="badge tag-ok">正常</span></td></tr>
+              <tr><td class="mono">key:order-prod-01</td><td>API Key</td><td>11,402</td><td>90</td><td>22</td><td>3</td><td><span class="badge tag-ok">正常</span></td></tr>
+              <tr><td class="mono">ip:10.24.3.18</td><td>IP</td><td>3,210</td><td>200</td><td>180</td><td>96</td><td><span class="badge tag-down">已拉黑</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 规则 -->
+      <div id="app-rules" class="app-sub">
+        <div class="card">
+          <h2>规则列表（应用级 + API 级）</h2>
+          <table>
+            <thead><tr><th>作用对象</th><th>名称</th><th>API 模式</th><th>类型</th><th>阶段</th><th>变量参数摘要</th><th>优先级</th><th>启用</th><th>操作</th></tr></thead>
+            <tbody>
+              <tr><td><span class="badge tag-info">应用级</span></td><td>订单起始规则</td><td class="mono">GET /v1/*</td><td><span class="badge">放行</span></td><td><span class="badge">access</span></td><td>缺省放行 + 自动加入</td><td>-</td><td>是</td><td><button class="sm danger">删除</button></td></tr>
+              <tr><td><span class="badge tag-info">应用级</span></td><td>全局限流</td><td class="mono">*</td><td><span class="badge">rate_limit</span></td><td><span class="badge">access</span></td><td class="mono">keys: req.ip</td><td>5</td><td>是</td><td><button class="sm danger">删除</button></td></tr>
+              <tr><td><span class="badge">API</span> POST /orders</td><td>创建订单限流</td><td class="mono">POST /orders</td><td><span class="badge">rate_limit</span></td><td><span class="badge">access</span></td><td class="mono">keys: req.ip + req.userid</td><td>10</td><td>是</td><td><button class="sm danger">删除</button></td></tr>
+              <tr><td><span class="badge">API</span> POST /orders</td><td>记录最后访问 URL</td><td class="mono">POST /orders</td><td><span class="badge">save_variable</span></td><td><span class="badge">access</span></td><td class="mono">last_url @ req.ip</td><td>1</td><td>是</td><td><button class="sm danger">删除</button></td></tr>
+              <tr><td><span class="badge">API</span> GET /orders/{id}</td><td>订单详情缓存</td><td class="mono">GET /orders/{id}</td><td><span class="badge">cache</span></td><td><span class="badge">access</span></td><td class="mono">force ttl=60</td><td>0</td><td>是</td><td><button class="sm danger">删除</button></td></tr>
+              <tr><td><span class="badge">API</span> GET /orders/{id}</td><td>响应脱敏/替换状态</td><td class="mono">GET /orders/{id}</td><td><span class="badge">response_transform</span></td><td><span class="badge tag-new">filter</span></td><td class="mono">replace data.status</td><td>0</td><td>是</td><td><button class="sm danger">删除</button></td></tr>
+              <tr><td><span class="badge">API</span> GET /tickets/{code}</td><td>换票码许可</td><td class="mono">GET /tickets/{code}</td><td><span class="badge">variable_check</span></td><td><span class="badge">access</span></td><td class="mono">code min_ttl=60</td><td>0</td><td>是</td><td><button class="sm danger">删除</button></td></tr>
+              <tr><td><span class="badge">API</span> POST /login</td><td>登录响应保存令牌</td><td class="mono">POST /login</td><td><span class="badge">response_transform</span></td><td><span class="badge tag-new">filter</span></td><td class="mono">save data.token → last_token @ userid</td><td>1</td><td>是</td><td><button class="sm danger">删除</button></td></tr>
+              <tr><td><span class="badge">API</span> GET /report/xml</td><td>报表转 XML</td><td class="mono">GET /report/xml</td><td><span class="badge">response_transform</span></td><td><span class="badge tag-new">filter</span></td><td class="mono">convert json→xml</td><td>0</td><td>是</td><td><button class="sm danger">删除</button></td></tr>
+              <tr><td><span class="badge">API</span> GET /admin/*</td><td>管理接口 JWT</td><td class="mono">GET /admin/*</td><td><span class="badge">auth</span></td><td><span class="badge">access</span></td><td class="mono">jwt HS256</td><td>30</td><td>是</td><td><button class="sm danger">删除</button></td></tr>
+              <tr><td><span class="badge">API</span> GET /export/*</td><td>导出走备用组</td><td class="mono">GET /export/*</td><td><span class="badge">change_target</span></td><td><span class="badge">access</span></td><td class="mono">upstream: 订单备用组</td><td>20</td><td>是</td><td><button class="sm danger">删除</button></td></tr>
+            </tbody>
+          </table>
+          <div class="hint"><span class="badge tag-info">设计点</span> access 阶段做请求控制；filter 阶段做响应加工（response_transform，仅 buffer 模式）。</div>
+        </div>
+
+        <div class="card">
+          <h2>新建 / 编辑规则</h2>
+          <div class="form-row">
+            <input placeholder="规则名称">
+            <label>作用对象
+              <select id="ruleScope">
+                <option value="app">应用级（作用于 base_path 下全部）</option>
+                <option value="api">API 级：POST /orders（创建订单）</option>
+                <option value="api">API 级：GET /orders/{id}（订单详情）</option>
+                <option value="api">API 级：GET /tickets/{code}（换票码校验）</option>
+              </select>
+            </label>
+            <label>优先级 <input type="number" value="0" style="width:70px"></label>
+            <label><input type="checkbox" checked> 启用</label>
+          </div>
+          <div class="form-row">
+            <label>规则类型
+              <select id="ruleAction">
+                <option value="stats">stats 统计计数</option>
+                <option value="cache">cache 缓存</option>
+                <option value="rate_limit">rate_limit 速率限制</option>
+                <option value="auth">auth 认证</option>
+                <option value="save_variable">save_variable 保存变量</option>
+                <option value="change_target">change_target 改变请求目标</option>
+                <option value="blacklist">blacklist 黑名单</option>
+                <option value="variable_check">variable_check 变量许可</option>
+                <option value="response_transform">response_transform 响应加工（filter）</option>
+              </select>
+            </label>
+            <label>上游组
+              <select>
+                <option>订单上游组（应用默认）</option>
+                <option>订单备用组</option>
+              </select>
+            </label>
+          </div>
+
+          <div id="fields-stats">
+            <div class="field-label">统计计数</div>
+            <div class="form-row">
+              <label>计数维度（变量）
+                <select multiple size="3" style="width:220px">
+                  <option selected>req.ip</option>
+                  <option>req.userid</option>
+                  <option>req.apikey</option>
+                  <option>var:last_url</option>
+                </select>
+              </label>
+              <label>写入声明变量 <input placeholder="visit_count" style="width:130px"></label>
+              <label>TTL（秒）<input type="number" value="86400" style="width:90px"></label>
+            </div>
+            <div class="hint">dimensions 可多选；target 须先在“变量”页声明。</div>
+          </div>
+
+          <div id="fields-cache" style="display:none">
+            <div class="field-label">缓存</div>
+            <div class="form-row">
+              <label>模式
+                <select>
+                  <option value="force">force 强制缓存</option>
+                  <option value="no-cache">no-cache 不缓存</option>
+                  <option value="auto">auto 自动（遵循协议）</option>
+                </select>
+              </label>
+              <label>TTL（秒）<input type="number" value="60" style="width:90px"></label>
+              <label>缓存键变量 <input value="req.url + req.query:lang" style="width:200px"></label>
+            </div>
+          </div>
+
+          <div id="fields-rate_limit" style="display:none">
+            <div class="field-label">速率限制</div>
+            <div class="form-row">
+              <label>窗口（秒）<input type="number" value="60" style="width:80px"></label>
+              <label>阈值 <input type="number" value="100" style="width:80px"></label>
+              <label>突发 <input type="number" value="20" style="width:80px"></label>
+            </div>
+            <div class="form-row">
+              <label>维度变量（可多选组合）
+                <select multiple size="4" style="width:260px">
+                  <option selected>req.ip</option>
+                  <option selected>req.userid</option>
+                  <option>req.apikey</option>
+                  <option>var:last_ip</option>
+                  <option>req.query:code</option>
+                </select>
+              </label>
+            </div>
+            <div class="form-row">
+              <label><input type="checkbox"> 超限自动拉黑</label>
+              <label>拉黑时长（秒）<input type="number" value="3600" style="width:90px"></label>
+            </div>
+            <div class="hint">示例：仅按 IP = keys:["req.ip"]；按 IP+userid = keys:["req.ip","req.userid"]；按关联变量 = keys:["var:last_ip"]。</div>
+          </div>
+
+          <div id="fields-auth" style="display:none">
+            <div class="field-label">认证（应用内令牌 / JWT）</div>
+            <div class="form-row">
+              <label>类型
+                <select>
+                  <option value="jwt">JWT</option>
+                  <option value="token">不透明令牌</option>
+                </select>
+              </label>
+              <label>HS256 密钥 <input placeholder="或 RS256 公钥" style="width:180px"></label>
+              <label>issuer <input placeholder="gatekeeper" style="width:120px"></label>
+              <label>audience <input placeholder="可选" style="width:100px"></label>
+            </div>
+            <div class="hint"><span class="badge tag-open">待确认</span> 令牌传递位置：Authorization 头 / query / Cookie？</div>
+          </div>
+
+          <div id="fields-save_variable" style="display:none">
+            <div class="field-label">保存变量（按 key 存储）</div>
+            <div class="form-row">
+              <label>目标变量名 <input placeholder="last_url" style="width:120px"></label>
+              <label>key 维度
+                <select>
+                  <option>req.ip</option>
+                  <option>dim:user（解析链）</option>
+                  <option>req.url</option>
+                  <option>req.query:&lt;name&gt;</option>
+                  <option>req.header:&lt;name&gt;</option>
+                  <option>req.userid</option>
+                  <option>req.apikey</option>
+                  <option>req.path:&lt;name&gt;</option>
+                  <option>global</option>
+                </select>
+              </label>
+              <label>取值来源 <input placeholder="req.url / req.query:code / req.header:x" style="width:220px"></label>
+              <label>TTL（秒）<input type="number" value="3600" style="width:90px"></label>
+            </div>
+            <div class="hint">目标变量须先在“变量”页声明，如 last_url（key=req.ip，按客户端 IP 记住上次访问的 URL）。</div>
+          </div>
+
+          <div id="fields-change_target" style="display:none">
+            <div class="field-label">改变请求目标</div>
+            <div class="form-row">
+              <label>目标上游组
+                <select>
+                  <option>订单备用组</option>
+                  <option>订单上游组</option>
+                </select>
+              </label>
+              <label><input type="checkbox" checked> 转发时剥离 base_path</label>
+              <label>路径改写 <input placeholder="strip:/v1 或 replace:/old:/new" style="width:180px"></label>
+              <label>设置请求头 <input placeholder='{"X-App":"orders"}' style="width:170px"></label>
+            </div>
+            <div class="hint">未配置任何转写时，使用所属上游组的缺省映射（前缀转写：剥离 base_path / 前缀替换 / 加前缀）。</div>
+          </div>
+
+          <div id="fields-blacklist" style="display:none">
+            <div class="field-label">黑名单维度</div>
+            <div class="form-row">
+              <label><input type="checkbox" checked> req.ip</label>
+              <label><input type="checkbox"> req.userid</label>
+              <label><input type="checkbox"> req.apikey</label>
+              <label>参数 <input placeholder="如 req.query:phone" style="width:140px"></label>
+            </div>
+          </div>
+
+          <div id="fields-variable_check" style="display:none">
+            <div class="field-label">变量许可</div>
+            <div class="form-row">
+              <label>变量名 <input placeholder="code" style="width:120px"></label>
+              <label>要求值（留空=存在即可）<input placeholder="abc123" style="width:140px"></label>
+              <label>最小剩余 TTL（秒）<input type="number" value="60" style="width:90px"></label>
+            </div>
+          </div>
+
+          <div id="fields-response_transform" style="display:none">
+            <div class="field-label">响应加工（filter 阶段，仅 buffer 模式）</div>
+            <div class="form-row">
+              <label>操作
+                <select id="rtOp">
+                  <option value="replace">replace 替换 JSON 属性值</option>
+                  <option value="save_variable">save_variable 保存属性到变量</option>
+                  <option value="convert">convert JSON ↔ XML 转换</option>
+                </select>
+              </label>
+            </div>
+            <div id="rt-replace-fields">
+              <div class="form-row">
+                <label>JSON 属性路径 <input placeholder="data.status" style="width:140px"></label>
+                <label>替换值 <input placeholder="静态值 或 var:req.ip" style="width:180px"></label>
+              </div>
+            </div>
+            <div id="rt-save_variable-fields" style="display:none">
+              <div class="form-row">
+                <label>JSON 属性路径 <input placeholder="data.token" style="width:140px"></label>
+                <label>目标变量 <input placeholder="last_token（须已声明）" style="width:170px"></label>
+                <label>key 维度
+                  <select>
+                    <option>req.ip</option>
+                    <option>dim:user（解析链）</option>
+                    <option>req.url</option>
+                    <option>req.query:&lt;name&gt;</option>
+                    <option>req.header:&lt;name&gt;</option>
+                    <option>req.userid</option>
+                    <option>req.apikey</option>
+                    <option>req.path:&lt;name&gt;</option>
+                    <option>global</option>
+                  </select>
+                </label>
+                <label>TTL（秒）<input type="number" value="3600" style="width:80px"></label>
+              </div>
+            </div>
+            <div id="rt-convert-fields" style="display:none">
+              <div class="form-row">
+                <label>方向
+                  <select>
+                    <option value="json_to_xml">JSON → XML</option>
+                    <option value="xml_to_json">XML → JSON</option>
+                  </select>
+                </label>
+                <label>XML 根节点 <input placeholder="response" style="width:120px"></label>
+                <label>输出 Content-Type <input placeholder="application/xml（默认自动）" style="width:200px"></label>
+              </div>
+            </div>
+            <div class="hint">
+              响应属性保存到变量后，可被其他 API 的 variable_check / rate_limit 引用，
+              形成"响应 → 变量 → 许可"闭环。非法 body / 转换失败默认透传原始响应（待确认）。
+            </div>
+          </div>
+
+          <div class="form-row" style="margin-top:12px">
+            <button class="primary">保存规则</button>
+            <button>重置</button>
+          </div>
+          <div class="alert-line" style="margin-top:8px">
+            <b>待确认：</b>是否需要规则命中调试视图（请求 → 命中哪些规则 → 各规则执行结果）？
+            每个规则类型的详细配置方法见 docs/RULES.md。
+          </div>
+        </div>
+      </div>
+
+      <!-- 变量声明区域 -->
+      <div id="app-variables" class="app-sub">
+        <div class="card">
+          <h2>变量声明区域 <span class="badge tag-new">新增</span></h2>
+          <table>
+            <thead><tr><th>变量名</th><th>key 维度</th><th>取值来源</th><th>维护规则</th><th>TTL</th><th>当前值示例</th><th>操作</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">last_url</td><td>req.ip</td><td>req.url</td><td>save_variable（POST /orders）</td><td>3600s</td><td class="mono">/orders/123</td><td><button class="sm danger">删除</button></td></tr>
+              <tr><td class="mono">last_ip</td><td>req.userid</td><td>req.ip</td><td>save_variable（应用级）</td><td>3600s</td><td class="mono">10.1.2.3</td><td><button class="sm danger">删除</button></td></tr>
+              <tr><td class="mono">visit_count</td><td>req.ip</td><td>计数</td><td>stats（应用级）</td><td>86400s</td><td class="mono">12</td><td><button class="sm danger">删除</button></td></tr>
+              <tr><td class="mono">code</td><td>global</td><td>req.query:code</td><td>save_variable（换票入口）</td><td>300s</td><td class="mono">abc123</td><td><button class="sm danger">删除</button></td></tr>
+              <tr><td class="mono">last_token</td><td>req.userid</td><td>data.token（响应）</td><td>response_transform（POST /login）</td><td>3600s</td><td class="mono">tok_••••••9f2e</td><td><button class="sm danger">删除</button></td></tr>
+            </tbody>
+          </table>
+          <div class="hint">
+            请求级变量内置：<code>req.url / req.raw_url / req.method / req.ip / req.userid / req.apikey</code>，
+            <code>req.header:&lt;name&gt; / req.query:&lt;name&gt; / req.path:&lt;name&gt;</code>。
+            声明变量在规则参数中以 <code>var:&lt;name&gt;</code> 引用（如 <code>var:last_url</code>）。
+          </div>
+          <div class="hint">
+            <span class="badge tag-info">可见性规则（已确认）</span>
+            key 维度 = 任意请求级变量：<b>同 IP / 同 URL / 同 query 值 / 同 header 值</b>的请求共享同一槽位；
+            跨请求关联靠 key 值一致，不靠显式关联。
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>维度定义（key 的来源） <span class="badge tag-new">新增</span></h2>
+          <h3>标准维度（内置）</h3>
+          <div class="hint"><code>req.ip</code> / <code>req.url</code> / <code>req.method</code> —— 请求中必然可解析</div>
+          <h3>参数化维度（声明时写死参数名）</h3>
+          <div class="hint"><code>req.query:&lt;name&gt;</code> / <code>req.header:&lt;name&gt;</code> / <code>req.path:&lt;name&gt;</code>，如 <code>req.query:uid</code></div>
+          <h3>语义维度（解析链，解决字段名不统一）</h3>
+          <table>
+            <thead><tr><th>维度名</th><th>解析链（按顺序取第一个非空）</th><th>操作</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">dim:user</td><td class="mono">req.userid → req.header:X-User-Id → req.query:uid</td><td><button class="sm danger">删除</button></td></tr>
+              <tr><td class="mono">dim:device</td><td class="mono">req.header:X-Device-Id → req.query:device_id</td><td><button class="sm danger">删除</button></td></tr>
+            </tbody>
+          </table>
+          <div class="form-row" style="margin-top:10px">
+            <input placeholder="维度名，如 dim:user" style="width:130px">
+            <input placeholder="解析链字段，用 → 分隔，如 req.userid → req.header:X-User-Id → req.query:uid" style="flex:1; min-width:260px">
+            <button class="primary sm">新增语义维度</button>
+          </div>
+          <div class="hint">变量 key 维度与 rate_limit 维度都可引用维度定义（如 dim:user）；解析链全部缺失时变量视为不存在。</div>
+        </div>
+
+        <div class="card">
+          <h2>声明新变量</h2>
+          <div class="form-row">
+            <input placeholder="变量名，如 last_url" style="width:160px">
+            <label>key 维度
+              <select>
+                <option>req.ip</option>
+                <option>dim:user（解析链）</option>
+                <option>req.url</option>
+                <option>req.query:&lt;name&gt;</option>
+                <option>req.header:&lt;name&gt;</option>
+                <option>req.userid</option>
+                <option>req.apikey</option>
+                <option>req.path:&lt;name&gt;</option>
+                <option>global</option>
+              </select>
+            </label>
+            <label>取值来源
+              <select>
+                <option>由 save_variable 规则写入</option>
+                <option>请求字段（url / ip / userid / header / query）</option>
+                <option>由响应属性保存（response_transform）</option>
+                <option>stats 统计写入</option>
+              </select>
+            </label>
+            <label>TTL（秒）<input type="number" value="3600" style="width:90px"></label>
+            <button class="primary">声明变量</button>
+          </div>
+          <div class="hint">
+            <span class="badge tag-open">待确认</span> 变量命名规则与重名冲突检测、声明区域作用域（应用级 / 全局）。
+          </div>
+        </div>
+      </div>
+
+      <!-- 黑名单 -->
+      <div id="app-blacklist" class="app-sub">
+        <div class="card">
+          <h2>黑名单（应用内）</h2>
+          <div class="form-row">
+            <label>维度
+              <select>
+                <option>req.ip</option>
+                <option>req.userid</option>
+                <option>req.apikey</option>
+                <option>req.query:xxx</option>
+              </select>
+            </label>
+            <input placeholder="值，如 1.2.3.4">
+            <input placeholder="原因（可选）">
+            <label>过期时间 <input type="datetime-local"></label>
+            <button class="primary">加入黑名单</button>
+          </div>
+          <table>
+            <thead><tr><th>ID</th><th>维度</th><th>值</th><th>原因</th><th>来源</th><th>过期时间</th><th>操作</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td>req.ip</td><td class="mono">10.24.3.18</td><td>限流超限自动拉黑</td><td><span class="badge tag-new">自动</span></td><td>2026-08-29 20:00</td><td><button class="sm danger">移除</button></td></tr>
+              <tr><td>2</td><td>req.query:phone</td><td class="mono">138****0000</td><td>风控人工拉黑</td><td>手动</td><td>永久</td><td><button class="sm danger">移除</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 令牌 -->
+      <div id="app-tokens" class="app-sub">
+        <div class="card">
+          <h2>令牌（应用内）</h2>
+          <div class="form-row">
+            <input placeholder="令牌值（留空自动生成）" style="width:240px">
+            <input placeholder="所有者">
+            <label>过期时间 <input type="datetime-local"></label>
+            <button class="primary">新建令牌</button>
+          </div>
+          <table>
+            <thead><tr><th>ID</th><th>令牌</th><th>所有者</th><th>过期时间</th><th>创建时间</th><th>操作</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td class="mono">tok_••••••a3f9</td><td>订单服务 A</td><td>2027-08-29</td><td>2026-08-01</td><td><button class="sm danger">吊销</button></td></tr>
+              <tr><td>2</td><td class="mono">tok_••••••b2c1</td><td>订单服务 B</td><td>永久</td><td>2026-08-15</td><td><button class="sm danger">吊销</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 上游 -->
+      <div id="app-upstreams" class="app-sub">
+        <div class="card">
+          <h2>上游组（应用内）</h2>
+          <table>
+            <thead><tr><th>名称</th><th>策略</th><th>目标</th><th>健康状态</th><th>操作</th></tr></thead>
+            <tbody>
+              <tr><td>订单上游组（默认）</td><td>多目标轮询</td><td>3</td><td><span class="badge tag-ok">3/3 健康</span></td><td><button class="sm">编辑</button> <button class="sm danger">删除</button></td></tr>
+              <tr><td>订单备用组</td><td>主备切换</td><td>2</td><td><span class="badge tag-warn">主故障，已切备</span></td><td><button class="sm">编辑</button> <button class="sm danger">删除</button></td></tr>
+            </tbody>
+          </table>
+          <div class="form-row" style="margin-top:12px"><button class="primary">新建上游组（本应用）</button></div>
+        </div>
+
+        <div class="card">
+          <h2>订单上游组 · 目标列表</h2>
+          <table>
+            <thead><tr><th>地址</th><th>角色</th><th>权重</th><th>状态</th><th>最近检查</th><th>连续失败</th><th>操作</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">http://10.1.0.31:8080</td><td>轮询节点</td><td>100</td><td><span class="badge tag-ok">健康</span></td><td>14:33:00</td><td>0</td><td><button class="sm">启用/禁用</button></td></tr>
+              <tr><td class="mono">http://10.1.0.32:8080</td><td>轮询节点</td><td>80</td><td><span class="badge tag-ok">健康</span></td><td>14:33:00</td><td>0</td><td><button class="sm">启用/禁用</button></td></tr>
+              <tr><td class="mono">http://10.1.0.33:8080</td><td>轮询节点</td><td>100</td><td><span class="badge tag-ok">健康</span></td><td>14:33:00</td><td>0</td><td><button class="sm">启用/禁用</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <h2>订单上游组 · 缺省映射（前缀转写） <span class="badge tag-new">新增</span></h2>
+          <div class="form-row">
+            <label>模式
+              <select>
+                <option>剥离应用 base_path（/v1 → 空）</option>
+                <option>前缀替换（/v1 → /api/v1）</option>
+                <option>加前缀</option>
+                <option>不转写</option>
+              </select>
+            </label>
+            <label>目标前缀 <input placeholder="/api/v1" style="width:120px"></label>
+            <button class="primary sm">保存缺省映射</button>
+          </div>
+          <div class="hint">未针对 API 单独转写（change_target 规则或 API 独立配置）时，转发使用本缺省映射。</div>
+        </div>
+
+        <div class="card">
+          <h2>健康检查配置</h2>
+          <div class="form-row">
+            <label>模式
+              <select>
+                <option>主动 + 被动</option>
+                <option>仅主动</option>
+                <option>仅被动</option>
+              </select>
+            </label>
+            <label>探测间隔 <input type="number" value="10" style="width:80px"> 秒</label>
+            <label>超时 <input type="number" value="2" style="width:70px"> 秒</label>
+            <label>失败阈值 <input type="number" value="3" style="width:70px"></label>
+            <label>恢复阈值 <input type="number" value="2" style="width:70px"></label>
+          </div>
+          <div class="hint">
+            <span class="badge tag-open">待确认</span> 健康检查执行方（Caddy 原生 / PHP 后台）、主备恢复后是否自动切回。
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 监控（全局） ============ -->
+    <section id="page-metrics" class="page">
+      <div class="card">
+        <h2>Prometheus 指标（全局，含 app 标签）</h2>
+        <div class="form-row">
+          <span>抓取端点</span><code>/admin/api/metrics</code>
+          <button class="primary sm">立即抓取测试</button>
+        </div>
+        <table>
+          <thead><tr><th>指标名</th><th>类型</th><th>标签</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">gatekeeper_http_requests_total</td><td>Counter</td><td>app, api, client, status</td><td>请求量（按应用隔离）</td></tr>
+            <tr><td class="mono">gatekeeper_http_duration_seconds</td><td>Histogram</td><td>app, api</td><td>延迟（P50/P95/P99）</td></tr>
+            <tr><td class="mono">gatekeeper_http_errors_total</td><td>Counter</td><td>app, code</td><td>4xx/5xx</td></tr>
+            <tr><td class="mono">gatekeeper_denied_total</td><td>Counter</td><td>app, reason</td><td>403/429、未命中应用 404</td></tr>
+            <tr><td class="mono">gatekeeper_auto_added_apis_total</td><td>Counter</td><td>app</td><td>自动加入 API 数量</td></tr>
+            <tr><td class="mono">gatekeeper_upstream_healthy</td><td>Gauge</td><td>app, group, target</td><td>上游健康状态（0/1）</td></tr>
+            <tr><td class="mono">gatekeeper_log_import_lag_seconds</td><td>Gauge</td><td>-</td><td>日志导入滞后</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ============ 系统（全局） ============ -->
+    <section id="page-system" class="page">
+      <div class="card">
+        <h2>记录链路</h2>
+        <table>
+          <thead><tr><th>项</th><th>当前值</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td>日志文件</td><td class="mono">data/logs/2026-08-29.log</td><td>热路径每请求追加一行 JSON（含 app_id），按天轮转</td></tr>
+            <tr><td>今日行数 / 大小</td><td>128,430 行 / 42 MB</td><td>保留天数与 raw_days 对齐（默认 7 天）</td></tr>
+            <tr><td>导入进程</td><td><span class="badge tag-ok">运行中</span></td><td>独立 PHP CLI，导入 SQLite + 自动登记 API（auto_add）</td></tr>
+            <tr><td>最近导入</td><td>14:33:12</td><td>导入水位记录于 meta 表</td></tr>
+            <tr><td>导入滞后</td><td>约 8 秒</td><td>滞后告警阈值待定</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>存储分层</h2>
+        <table>
+          <thead><tr><th>层</th><th>用途</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td>APCu（内存）</td><td>应用规则 / 黑名单 / 令牌快照、关联变量（按 key + TTL）、限流计数、请求上下文</td><td>热路径唯一状态源，请求路径不触 SQLite</td></tr>
+            <tr><td>SQLite</td><td>管理端、配置存储（apps / upstreams / rules / apis / variables / blacklist / tokens）、后台统计</td><td>仅管理与配置用途，异步导入写入</td></tr>
+            <tr><td>Redis</td><td>—</td><td><span class="badge tag-open">暂缓</span> 多实例部署时再评估</td></tr>
+            <tr><td>Souin</td><td>HTTP 缓存</td><td>缓存策略由规则注入 Cache-Control</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>缓存 PURGE</h2>
+        <div class="form-row">
+          <input placeholder="缓存键 / URL（留空=全部）" style="width:280px">
+          <button class="primary sm">PURGE</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 新建应用弹窗 -->
+    <div id="appModal" class="modal-mask">
+      <div class="modal">
+        <h2>新建应用</h2>
+        <div class="form-row">
+          <input id="newAppName" placeholder="应用名称，如 客服服务" style="flex:1; min-width:180px">
+          <label>base_path <input id="newAppBase" value="/cs" style="width:90px"></label>
+        </div>
+        <div class="form-row">
+          <label>匹配方式
+            <select id="newAppMatch">
+              <option>仅前缀</option>
+              <option>前缀 + Host</option>
+              <option>前缀 + 请求头</option>
+            </select>
+          </label>
+          <input id="newAppHost" placeholder="Host / 请求头值（可选）" style="flex:1; min-width:180px">
+        </div>
+        <div class="form-row">
+          <label>上游地址（可选，创建后可在上游页配置）<input id="newAppUpstream" placeholder="http://customer-svc:8080" style="width:260px"></label>
+        </div>
+        <div class="hint">缺省配置预填：缺省放行 = 开、自动加入规则 = 开、缺省缓存 = 关。保存时检测 base_path 与其他应用的前缀冲突。</div>
+        <div id="newAppErr" class="alert-err" style="display:none; margin-top:8px"></div>
+        <div class="form-row" style="justify-content:flex-end; margin-top:14px; margin-bottom:0">
+          <button onclick="closeAppModal()">取消</button>
+          <button class="primary" onclick="createApp()">创建应用</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+  var currentApp = 'orders';
+  function appSelectValue() { return document.getElementById('appSelect').value; }
+
+  function showMain(page, sub) {
+    document.querySelectorAll('.sidebar nav a').forEach(function (a) { a.classList.remove('active'); });
+    var links = document.querySelectorAll('.sidebar nav a[data-page="' + page + '"]');
+    if (page === 'app-detail') {
+      var target = sub ? document.querySelector('.sidebar nav a[data-sub="' + sub + '"]') : null;
+      if (!target && links.length) target = links[0];
+      if (target) target.classList.add('active');
+    } else if (links.length) {
+      links[0].classList.add('active');
+    }
+    document.querySelectorAll('.page').forEach(function (s) { s.classList.remove('active'); });
+    document.getElementById('page-' + page).classList.add('active');
+    if (page === 'app-detail' && sub) showSub(sub);
+  }
+
+  document.querySelectorAll('.sidebar nav a').forEach(function (link) {
+    link.addEventListener('click', function () {
+      var page = link.getAttribute('data-page');
+      var sub = link.getAttribute('data-sub') || '';
+      if (page === 'app-detail' && !appSelectValue()) {
+        showMain('apps');
+        return;
+      }
+      showMain(page, sub);
+    });
+  });
+
+  function showSub(sub) {
+    document.querySelectorAll('#page-app-detail .app-sub').forEach(function (s) { s.classList.remove('active'); });
+    document.getElementById('app-' + sub).classList.add('active');
+    var link = document.querySelector('.sidebar nav a[data-sub="' + sub + '"]');
+    if (link) {
+      document.querySelectorAll('.sidebar nav a').forEach(function (a) { a.classList.remove('active'); });
+      link.classList.add('active');
+    }
+  }
+
+  function onAppSelect(sel) {
+    var v = sel.value;
+    if (v === 'new') {
+      openAppModal();
+      sel.value = currentApp;
+      return;
+    }
+    if (!v) { showMain('apps'); return; }
+    currentApp = v;
+    showMain('app-detail', 'overview');
+  }
+
+  function goAppDetail() {
+    var sel = document.getElementById('appSelect');
+    if (!sel.value) sel.value = 'orders';
+    currentApp = sel.value;
+    showMain('app-detail', 'overview');
+  }
+
+  function openAppModal() {
+    document.getElementById('appModal').style.display = 'flex';
+    document.getElementById('newAppErr').style.display = 'none';
+  }
+  function closeAppModal() {
+    document.getElementById('appModal').style.display = 'none';
+  }
+  function createApp() {
+    var name = document.getElementById('newAppName').value.trim() || '新应用';
+    var base = document.getElementById('newAppBase').value.trim() || '/v1';
+    var err = document.getElementById('newAppErr');
+    if (base.charAt(0) !== '/') {
+      err.textContent = 'base_path 必须以 / 开头';
+      err.style.display = 'block';
+      return;
+    }
+    var sel = document.getElementById('appSelect');
+    var opt = document.createElement('option');
+    opt.value = 'new-app';
+    opt.textContent = name + ' ' + base;
+    sel.insertBefore(opt, sel.querySelector('option[value="new"]'));
+    sel.value = 'new-app';
+    currentApp = 'new-app';
+    document.getElementById('appTitle').textContent = name;
+    closeAppModal();
+    showMain('app-detail', 'overview');
+  }
+
+  var actionSelect = document.getElementById('ruleAction');
+  var groups = ['stats', 'cache', 'rate_limit', 'auth', 'save_variable', 'change_target', 'blacklist', 'variable_check', 'response_transform'];
+  actionSelect.addEventListener('change', function () {
+    groups.forEach(function (g) {
+      document.getElementById('fields-' + g).style.display = g === actionSelect.value ? 'block' : 'none';
+    });
+  });
+
+  var rtOp = document.getElementById('rtOp');
+  rtOp.addEventListener('change', function () {
+    ['replace', 'save_variable', 'convert'].forEach(function (op) {
+      document.getElementById('rt-' + op + '-fields').style.display = op === rtOp.value ? 'block' : 'none';
+    });
+  });
+
+  function saveApiEdit() {
+    var path = document.getElementById('editApiPath').value.trim();
+    var name = document.getElementById('editApiName').value.trim();
+    var box = document.getElementById('apiSaveMsg');
+    var conflict = path === '/orders' || path === '/orders/123';
+    if (conflict) {
+      box.className = 'alert-err';
+      box.innerHTML = '<b>冲突：</b>编辑后的路径 <code>' + path + '</code> 与已登记的 <code>POST /orders</code>（创建订单）模板互相覆盖。请先删除冲突的 API，或改用更具体的模板（如 /orders/{id}）。';
+    } else {
+      box.className = 'alert-ok';
+      box.innerHTML = '保存成功：<code>' + path + '</code> 名称「' + name + '」已更新，未发现 URL 冲突。';
+    }
+  }
+</script>
+</body>
+</html>

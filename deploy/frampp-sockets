@@ -1,0 +1,257 @@
+#!/usr/bin/env bash
+#
+# frampp-sockets — FRAMPP MariaDB/Redis TCP ⇄ Unix socket 切换脚本
+#
+# 设计原则：
+#   - 默认保持 TCP（127.0.0.1:3306 / 6379），方便远程管理工具直接连接；
+#   - 需要安全性 / 避免端口冲突的用户，一键切换到 Unix socket；
+#   - socket 文件统一放在 $FRAMPP_HOME/var/ 下，不与任何外部端口冲突；
+#   - HTTP 对外端口仍由 etc/Caddyfile 配置，本脚本不涉及。
+#
+# 安装（复制到 FRAMPP 的 bin/ 目录）：
+#   cp deploy/frampp-sockets $FRAMPP_HOME/bin/frampp-sockets
+#   chmod +x $FRAMPP_HOME/bin/frampp-sockets
+#
+# 用法：
+#   bin/frampp-sockets status        # 查看当前模式
+#   bin/frampp-sockets socket        # 切换到 unix socket
+#   bin/frampp-sockets tcp           # 切回 TCP（默认）
+#
+# 修改后需重启生效：bin/frampp restart（或 systemctl restart frampp）。
+# 注意：再次运行 bin/frampp init 会重新生成配置，需重跑本脚本的 socket 模式。
+
+set -euo pipefail
+
+# ---------- 定位 FRAMPP_HOME ----------
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HOME_DIR="${FRAMPP_HOME:-}"
+if [ -z "$HOME_DIR" ] && [ -x "$SCRIPT_DIR/frampp" ] && [ -d "$(dirname "$SCRIPT_DIR")/etc" ]; then
+    HOME_DIR="$(dirname "$SCRIPT_DIR")"
+fi
+if [ -z "$HOME_DIR" ]; then
+    P="$(command -v frampp 2>/dev/null || true)"
+    if [ -n "$P" ]; then
+        P="$(readlink -f "$P")"
+        HOME_DIR="$(cd "$(dirname "$P")/.." && pwd)"
+    fi
+fi
+[ -n "$HOME_DIR" ] || { echo "!! 未找到 FRAMPP_HOME（设置 FRAMPP_HOME 或把脚本放入 FRAMPP/bin/）" >&2; exit 1; }
+HOME_DIR="$(readlink -f "$HOME_DIR")"
+
+MODE="${1:-status}"
+PY="$HOME_DIR/modules/python/bin/python3"
+[ -x "$PY" ] || { echo "!! 缺少 FRAMPP Python 运行时：$PY" >&2; exit 1; }
+
+"$PY" - "$MODE" "$HOME_DIR" <<'PY'
+import os
+import re
+import sys
+import json
+
+mode, home = sys.argv[1], sys.argv[2]
+etc = os.path.join(home, 'etc')
+var = os.path.join(home, 'var')
+redis_conf = os.path.join(etc, 'redis.conf')
+php_ini = os.path.join(etc, 'php.ini')
+runtime_json = os.path.join(var, 'runtime.json')
+sm_file = os.path.join(home, 'modules/control-panel/src/ServiceManager.php')
+resp_file = os.path.join(home, 'modules/agent/src/RespClient.php')
+mdb_file = os.path.join(home, 'modules/agent/src/Tools/MariaDbTools.php')
+redis_sock = os.path.join(var, 'redis.sock')
+mariadb_sock = os.path.join(var, 'mariadb.sock')
+MARK_START = '// frampp-sockets:start'
+MARK_END = '// frampp-sockets:end'
+
+
+def fail(msg: str):
+    print(f'!! {msg}', file=sys.stderr)
+    sys.exit(2)
+
+
+def load_json(p: str):
+    with open(p, encoding='utf-8') as f:
+        return json.load(f)
+
+
+def save_json(p: str, d: dict):
+    with open(p, 'w', encoding='utf-8') as f:
+        json.dump(d, f, ensure_ascii=False, indent=2)
+        f.write('\n')
+
+
+def ports():
+    d = load_json(runtime_json)
+    return int(d['ports']['mysql']), int(d['ports']['redis'])
+
+
+def status():
+    mode = 'tcp'
+    if os.path.isfile(redis_conf) and re.search(r'^unixsocket\s', open(redis_conf).read(), re.M):
+        mode = 'socket'
+    if os.path.isfile(runtime_json):
+        d = load_json(runtime_json)
+        if 'sockets' in d:
+            mode = 'socket'
+    print(f'当前模式: {mode}')
+    print(f'  Redis   : {redis_conf}')
+    print(f'  MariaDB : {sm_file}')
+    print(f'  socket 目录: {var}')
+    if mode == 'socket':
+        print(f'  redis.sock  : {redis_sock}')
+        print(f'  mariadb.sock: {mariadb_sock}')
+
+
+def patch_marker(file: str, needle: str, block: str):
+    if not os.path.isfile(file):
+        return
+    s = open(file, encoding='utf-8').read()
+    if MARK_START in s:
+        return
+    if needle not in s:
+        print(f'!! 未找到注入点，跳过: {file} (needle: {needle[:40]}...)', file=sys.stderr)
+        return
+    s = s.replace(needle, block + '\n' + needle, 1)
+    open(file, 'w', encoding='utf-8').write(s)
+
+
+def unmark(file: str):
+    if not os.path.isfile(file):
+        return
+    s = open(file, encoding='utf-8').read()
+    if MARK_START not in s:
+        return
+    out = []
+    skip = False
+    for line in s.splitlines():
+        if MARK_START in line:
+            skip = True
+            continue
+        if MARK_END in line:
+            skip = False
+            continue
+        if not skip:
+            out.append(line)
+    open(file, 'w', encoding='utf-8').write('\n'.join(out) + '\n')
+
+
+def apply_socket():
+    os.makedirs(var, exist_ok=True)
+    if not os.path.isfile(runtime_json):
+        fail(f'缺少 {runtime_json}，请先运行 bin/frampp init')
+
+    # 1. Redis：port 0 + unixsocket（var/）
+    if os.path.isfile(redis_conf):
+        lines = open(redis_conf, encoding='utf-8').read().splitlines()
+        out, added = [], False
+        for ln in lines:
+            if re.match(r'^port\s+\d+', ln):
+                ln = 'port 0'
+            if re.match(r'^unixsocket\s', ln):
+                ln = f'unixsocket {redis_sock}'
+                added = True
+            if re.match(r'^unixsocketperm\s', ln):
+                ln = 'unixsocketperm 700'
+            out.append(ln)
+        if not added:
+            out += ['', f'unixsocket {redis_sock}', 'unixsocketperm 700']
+        open(redis_conf, 'w', encoding='utf-8').write('\n'.join(out) + '\n')
+
+    # 2. MariaDB：ServiceManager 启动参数加 --socket + --skip-networking
+    needle = "'--bind-address=127.0.0.1',"
+    block = ('            ' + MARK_START + '\n'
+             "            '--socket=' . $this->config->varDir('mariadb.sock'),\n"
+             "            '--skip-networking',\n"
+             '            ' + MARK_END)
+    patch_marker(sm_file, needle, block)
+
+    # 3. Agent Redis 客户端：优先 unix socket
+    needle = '        $errno = 0;'
+    block = ('        ' + MARK_START + '\n'
+             "        $sock = $this->config->runtime['sockets']['redis'] ?? null;\n"
+             '        if ($sock !== null) {\n'
+             "            $stream = @stream_socket_client('unix://' . $sock, $errno, $errstr, 3, STREAM_CLIENT_CONNECT);\n"
+             "            if ($stream !== false) { $this->stream = $stream; $this->execute('AUTH', [$pass]); return; }\n"
+             '        }\n'
+             '        ' + MARK_END)
+    patch_marker(resp_file, needle, block)
+
+    # 4. Agent MariaDB 客户端：优先 unix socket
+    needle = '            $this->pdo = new PDO('
+    block = ('            ' + MARK_START + '\n'
+             "            $sock = $this->config->runtime['sockets']['mariadb'] ?? null;\n"
+             '            if ($sock !== null) {\n'
+             "                $this->pdo = new PDO('mysql:unix_socket=' . $sock . ';charset=utf8mb4', $user, $pass, [PDO::ATTR_TIMEOUT => 3, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);\n"
+             '                return $this->pdo;\n'
+             '            }\n'
+             '            ' + MARK_END)
+    patch_marker(mdb_file, needle, block)
+
+    # 5. runtime.json：写入 sockets
+    d = load_json(runtime_json)
+    d['sockets'] = {'mariadb': mariadb_sock, 'redis': redis_sock}
+    save_json(runtime_json, d)
+
+    # 6. php.ini：默认 socket（PHP 应用 host=localhost 时走 socket）
+    if os.path.isfile(php_ini):
+        s = open(php_ini, encoding='utf-8').read()
+        if '; frampp-sockets' not in s:
+            s = s.rstrip('\n') + f"\n; frampp-sockets\npdo_mysql.default_socket={mariadb_sock}\nmysqli.default_socket={mariadb_sock}\n"
+            open(php_ini, 'w', encoding='utf-8').write(s)
+
+    print('== 已切换到 Unix socket ==')
+    print(f'  redis.sock  : {redis_sock}')
+    print(f'  mariadb.sock: {mariadb_sock}')
+    print('  请重启生效: bin/frampp restart（或 systemctl restart frampp）')
+
+
+def revert_tcp():
+    my_port, rd_port = ports()
+
+    # 1. Redis 恢复 TCP
+    if os.path.isfile(redis_conf):
+        out = []
+        for ln in open(redis_conf, encoding='utf-8').read().splitlines():
+            if re.match(r'^port\s+0\s*$', ln):
+                ln = f'port {rd_port}'
+            if re.match(r'^unixsocket\s', ln):
+                continue
+            if re.match(r'^unixsocketperm\s', ln):
+                continue
+            out.append(ln)
+        open(redis_conf, 'w', encoding='utf-8').write('\n'.join(out) + '\n')
+
+    # 2. 移除各 PHP 文件注入块
+    unmark(sm_file)
+    unmark(resp_file)
+    unmark(mdb_file)
+
+    # 3. runtime.json 移除 sockets
+    d = load_json(runtime_json)
+    d.pop('sockets', None)
+    save_json(runtime_json, d)
+
+    # 4. php.ini 移除 socket 行
+    if os.path.isfile(php_ini):
+        out = [
+            ln for ln in open(php_ini, encoding='utf-8').read().splitlines()
+            if ln != '; frampp-sockets'
+            and not ln.startswith('pdo_mysql.default_socket=')
+            and not ln.startswith('mysqli.default_socket=')
+        ]
+        open(php_ini, 'w', encoding='utf-8').write('\n'.join(out) + '\n')
+
+    print('== 已切回 TCP ==')
+    print(f'  mysql: 127.0.0.1:{my_port}  redis: 127.0.0.1:{rd_port}')
+    print('  请重启生效: bin/frampp restart（或 systemctl restart frampp）')
+
+
+if mode == 'socket':
+    apply_socket()
+elif mode == 'tcp':
+    revert_tcp()
+elif mode == 'status':
+    status()
+else:
+    print('用法: frampp-sockets {status|socket|tcp}')
+    sys.exit(1)
+PY

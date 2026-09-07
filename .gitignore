@@ -1,0 +1,20 @@
+# ApiGateKeeper
+data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# admin-web
+admin-web/node_modules/
+admin-web/.vite/
+admin-web/dist/
+
+# deploy artifacts
+deploy/bin/
+dist/
+
+# logs
+*.log
+
+# misc
+.DS_Store
